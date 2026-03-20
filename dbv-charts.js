@@ -22,7 +22,7 @@
     .chart-controls { 
         padding: 20px; 
         display: grid; 
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); 
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
         gap: 20px; 
         border-bottom: 1px solid var(--border); 
         background: var(--surface-2); 
@@ -180,19 +180,25 @@
         const xField = document.createElement("div");
         xField.className = "field";
         xField.style.width = "100%";
-
         const xSel = document.createElement("select");
         xSel.style.width = "100%";
-        DBV.data.headers.forEach((h,i) => { xSel.add(new Option(h, i)); });
         xField.appendChild(xSel);
         xDiv.appendChild(xField);
+
+        // --- NEW: Swap Selectables Checkbox ---
+        const swapListsDiv = document.createElement("div");
+        swapListsDiv.innerHTML = `<div class="chart-label">${DBV.Icons.chart} List Options</div>`;
+        const swapListsField = document.createElement("div");
+        swapListsField.className = "field";
+        swapListsField.innerHTML = `<label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="dbv-swap-lists"> Swap X / Y Selectables</label>`;
+        swapListsDiv.appendChild(swapListsField);
+        // ---------------------------------------
 
         const tDiv = document.createElement("div");
         tDiv.innerHTML = `<div class="chart-label">${DBV.Icons.chart} Chart Type</div>`;
         const tField = document.createElement("div");
         tField.className = "field";
         tField.style.width = "100%";
-
         const tSel = document.createElement("select");
         tSel.id = "dbv-chart-type";
         tSel.style.width = "100%";
@@ -202,35 +208,21 @@
         tField.appendChild(tSel);
         tDiv.appendChild(tField);
 
-        const yDiv = document.createElement("div");
-        yDiv.innerHTML = `<div class="chart-label">${DBV.Icons.chart} Y Metrics</div>`;
-        const yContainer = document.createElement("div");
-        yContainer.className = "y-metrics-list";
-
-        DBV.data.headers.forEach((h,i) => {
-            if(DBV.data.colTypes[i] === "number"){
-                const label = document.createElement("label");
-                label.className = "y-metric-item";
-                const isChecked = i !== parseInt(xSel.value);
-                label.innerHTML = `<input type="checkbox" value="${i}" ${isChecked ? 'checked' : ''}> <span>${h}</span>`;
-                yContainer.appendChild(label);
-            }
-        });
-
-        if(yContainer.children.length === 0) {
-            yContainer.innerHTML = `<div style="padding:10px; color:var(--muted); font-style:italic; font-size:12px;">No numeric columns found.</div>`;
-        }
-
-        yDiv.appendChild(yContainer);
-
         const swapDiv = document.createElement("div");
         swapDiv.innerHTML = `<div class="chart-label">${DBV.Icons.chart} Orientation</div>`;
         const swapField = document.createElement("div");
         swapField.className = "field";
-        swapField.innerHTML = `<label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="dbv-swap-axes"> Swap X / Y</label>`;
+        swapField.innerHTML = `<label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="dbv-swap-axes"> Swap X / Y Axes</label>`;
         swapDiv.appendChild(swapField);
 
+        const yDiv = document.createElement("div");
+        yDiv.innerHTML = `<div class="chart-label">${DBV.Icons.chart} Y Metrics</div>`;
+        const yContainer = document.createElement("div");
+        yContainer.className = "y-metrics-list";
+        yDiv.appendChild(yContainer);
+
         controls.appendChild(xDiv);
+        controls.appendChild(swapListsDiv);
         controls.appendChild(tDiv);
         controls.appendChild(swapDiv);
         controls.appendChild(yDiv);
@@ -253,6 +245,85 @@
         tooltip.className = "dbv-tooltip";
         document.body.appendChild(tooltip);
 
+        // --- NEW: Function to dynamically populate lists based on toggle ---
+        function populateLists() {
+            const isListSwapped = document.getElementById("dbv-swap-lists").checked;
+            
+            // Save current selections
+            const currentX = xSel.value;
+            const currentY = Array.from(yContainer.querySelectorAll("input:checked")).map(cb => cb.value);
+
+            xSel.innerHTML = "";
+            yContainer.innerHTML = "";
+
+            DBV.data.headers.forEach((h, i) => {
+                const isNum = DBV.data.colTypes[i] === "number";
+                
+                // Normal: X has all, Y has numbers. Swapped: X has numbers, Y has all.
+                const allowX = isListSwapped ? isNum : true;
+                const allowY = isListSwapped ? true : isNum;
+
+                if (allowX) {
+                    xSel.add(new Option(h, i));
+                }
+
+                if (allowY) {
+                    const label = document.createElement("label");
+                    label.className = "y-metric-item";
+                    // Only show "COUNT" badge if it's text, to keep it clean
+                    const badge = !isNum ? `<span style="font-size:10px; font-weight:600; color:var(--muted); background:var(--surface); border:1px solid var(--border); padding:2px 4px; border-radius:4px;">COUNT</span>` : '';
+                    label.innerHTML = `<input type="checkbox" value="${i}"> <span>${h}</span> ${badge}`;
+                    yContainer.appendChild(label);
+                }
+            });
+
+            if (yContainer.children.length === 0) {
+                yContainer.innerHTML = `<div style="padding:10px; color:var(--muted); font-style:italic; font-size:12px;">No metrics available.</div>`;
+            }
+
+            // Restore X if it still exists in the new list
+            if (Array.from(xSel.options).some(o => o.value === currentX)) {
+                xSel.value = currentX;
+            } else if (xSel.options.length > 0) {
+                xSel.selectedIndex = 0;
+            }
+
+            // Restore Y if it still exists in the new list
+            let restoredY = false;
+            yContainer.querySelectorAll("input[type='checkbox']").forEach(cb => {
+                if (currentY.includes(cb.value)) {
+                    cb.checked = true;
+                    restoredY = true;
+                }
+            });
+
+            // If we couldn't restore Y, check the first available valid box
+            if (!restoredY) {
+                const firstValid = yContainer.querySelector("input[type='checkbox']");
+                if (firstValid) firstValid.checked = true;
+            }
+
+            updateYMetricsState();
+            if (typeof updateChart === "function") updateChart();
+        }
+
+        function updateYMetricsState() {
+            const xVal = xSel.value;
+            const checkboxes = yContainer.querySelectorAll("input[type='checkbox']");
+            checkboxes.forEach(cb => {
+                const isX = cb.value === xVal;
+                cb.disabled = isX;
+                if(isX) {
+                    cb.checked = false;
+                    cb.parentElement.style.opacity = "0.4";
+                    cb.parentElement.style.pointerEvents = "none";
+                } else {
+                    cb.parentElement.style.opacity = "1";
+                    cb.parentElement.style.pointerEvents = "auto";
+                }
+            });
+        }
+
         chartBtn.onclick = () => {
             card.style.display = "block";
             tableCard.style.display = "none";
@@ -270,6 +341,11 @@
 
         let hitRegions = [];
         const colors = ["#24C780", "#3B82F6", "#F59E0B", "#EF4444", "#A855F7", "#EC4899"];
+
+        const getMetricName = (idx) => {
+            const isNum = DBV.data.colTypes[idx] === "number";
+            return (isNum ? "Sum of " : "Count of ") + DBV.data.headers[idx];
+        };
 
         function updateChart() {
             if(card.style.display === "none") return;
@@ -303,8 +379,13 @@
                 }
 
                 yIdxs.forEach((yIdx, i) => {
-                    const val = DBV.utils.parseNumber(row.cells[yIdx].textContent);
-                    if(val !== null) dataMap[xVal].sums[i] += val;
+                    const cellVal = row.cells[yIdx].textContent;
+                    if (DBV.data.colTypes[yIdx] === "number") {
+                        const val = DBV.utils.parseNumber(cellVal);
+                        if(val !== null) dataMap[xVal].sums[i] += val;
+                    } else {
+                        if(cellVal.trim() !== "") dataMap[xVal].sums[i] += 1; // Count text
+                    }
                 });
                 dataMap[xVal].count++;
             });
@@ -340,9 +421,8 @@
             const graphW = w - pad.l - pad.r;
             const graphH = h - pad.t - pad.b;
 
-            // --- Draw Titles Based on Swap State ---
             const primaryLabel = DBV.data.headers[xIdx];
-            const secondaryNames = yIdxs.map(idx => DBV.data.headers[idx]);
+            const secondaryNames = yIdxs.map(idx => getMetricName(idx));
             let secondaryLabel = secondaryNames.join(", ");
             if (secondaryNames.length > 2 || secondaryLabel.length > 40) secondaryLabel = secondaryNames.length + " Metrics Selected";
             if (secondaryNames.length === 0) secondaryLabel = "Values";
@@ -364,7 +444,6 @@
             ctx.fillText(yAxisTitle, 0, 0);
             ctx.restore();
 
-            // --- Draw Base Graph Lines ---
             ctx.beginPath();
             ctx.strokeStyle = gridColor;
             ctx.lineWidth = 1;
@@ -373,7 +452,6 @@
             ctx.lineTo(w - pad.r, h - pad.b);
             ctx.stroke();
 
-            // --- Draw Ticks & Grid ---
             ctx.fillStyle = textColor;
             ctx.font = "10px sans-serif";
 
@@ -420,7 +498,6 @@
                 }
             }
 
-            // --- Draw Data Shapes ---
             const step = (isSwapped ? graphH : graphW) / Math.max(1, labels.length);
 
             if(mode === "bar") {
@@ -453,7 +530,7 @@
                         hitRegions.push({
                             type: 'rect', x: x, y: y, w: barW, h: barH,
                             label: lbl, val: val,
-                            metricName: DBV.data.headers[yIdx], color: colColor
+                            metricName: getMetricName(yIdx), color: colColor
                         });
                     });
 
@@ -516,7 +593,7 @@
                         hitRegions.push({
                             type: 'circle', x: x, y: y, r: 15,
                             label: lbl, val: val,
-                            metricName: DBV.data.headers[yIdx], color: colColor
+                            metricName: getMetricName(yIdx), color: colColor
                         });
                     });
                 });
@@ -541,7 +618,7 @@
             yIdxs.forEach((idx, i) => {
                 const div = document.createElement("div");
                 div.className = "legend-item";
-                div.innerHTML = `<div class="color-dot" style="background:${colors[i%colors.length]}"></div> ${DBV.data.headers[idx]}`;
+                div.innerHTML = `<div class="color-dot" style="background:${colors[i%colors.length]}"></div> ${getMetricName(idx)}`;
                 legend.appendChild(div);
             });
         }
@@ -599,7 +676,14 @@
             tooltip.style.opacity = 0;
         });
 
-        xSel.onchange = updateChart;
+        // Initialize lists and wire up the swap button
+        populateLists();
+        document.getElementById("dbv-swap-lists").addEventListener("change", populateLists);
+
+        xSel.onchange = () => {
+            updateYMetricsState(); // Auto-disable the new X from Y
+            updateChart();
+        };
         tSel.onchange = updateChart;
         yContainer.addEventListener("change", updateChart);
 
